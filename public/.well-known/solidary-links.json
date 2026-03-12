@@ -1,0 +1,16 @@
+{
+  "@context": {
+    "site": "urn:solidary:type:site",
+    "connection": "urn:solidary:type:connection",
+    "site_id": "urn:solidary:term:site_id",
+    "connections": {
+      "@id": "urn:solidary:term:connections",
+      "@container": "@set"
+    },
+    "connected_site": "urn:solidary:term:connected_site"
+  },
+  "@id": "https://jazbogross.github.io/node-two",
+  "@type": "site",
+  "site_id": "1465788a-673c-4ba6-a1c2-9493612e6cee",
+  "connections": []
+}
