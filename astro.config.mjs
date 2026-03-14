@@ -9,6 +9,8 @@ const DYNAMIC_IMAGE_SMALL_ATTR = "data-dynamic-image-src-small";
 const DYNAMIC_IMAGE_MEDIUM_ATTR = "data-dynamic-image-src-medium";
 const DYNAMIC_IMAGE_LARGE_ATTR = "data-dynamic-image-src-large";
 const DYNAMIC_IMAGE_ORIGINAL_ATTR = "data-dynamic-image-src-original";
+const DYNAMIC_IMAGE_ATTRIBUTE_PATTERN =
+  /\sdata-dynamic-image-(?:managed|src-small|src-medium|src-large|src-original)=["'][^"']*["']/gi;
 
 const parseConfiguredFrontmatterValue = (fieldName) => {
   try {
@@ -157,6 +159,31 @@ const resolveManagedImageVariants = (rawSource) => {
   return variants.small ? variants : null;
 };
 
+const annotateManagedImageTag = (tag, rawSource) => {
+  const variants = resolveManagedImageVariants(rawSource);
+  if (!variants?.small) return tag;
+
+  const sanitizedTag = tag.replace(DYNAMIC_IMAGE_ATTRIBUTE_PATTERN, "");
+  const rewrittenSourceTag = sanitizedTag.replace(
+    /(\bsrc\s*=\s*)(["'])([^"']*)(\2)/i,
+    (_match, prefix, quote) => `${prefix}${quote}${variants.small}${quote}`
+  );
+  const attributeText = [
+    `${DYNAMIC_IMAGE_MANAGED_ATTR}="true"`,
+    `${DYNAMIC_IMAGE_SMALL_ATTR}="${variants.small}"`,
+    ...(variants.medium ? [`${DYNAMIC_IMAGE_MEDIUM_ATTR}="${variants.medium}"`] : []),
+    ...(variants.large ? [`${DYNAMIC_IMAGE_LARGE_ATTR}="${variants.large}"`] : []),
+    ...(variants.original ? [`${DYNAMIC_IMAGE_ORIGINAL_ATTR}="${variants.original}"`] : [])
+  ].join(" ");
+
+  return rewrittenSourceTag.replace(/\s*\/?>$/, (closing) => ` ${attributeText}${closing}`);
+};
+
+const annotateManagedImagesInRawHtml = (value) =>
+  value.replace(/<img\b[^>]*\bsrc=(["'])([^"']+)\1[^>]*>/gi, (tag, _quote, source) =>
+    annotateManagedImageTag(tag, source)
+  );
+
 const createDynamicImageRehypePlugin = () => {
   const annotateNode = (node) => {
     if (!node || typeof node !== "object") return;
@@ -177,6 +204,11 @@ const createDynamicImageRehypePlugin = () => {
           ...(variants.original ? { [DYNAMIC_IMAGE_ORIGINAL_ATTR]: variants.original } : {})
         };
       }
+    }
+
+    if ((node.type === "raw" || node.type === "html") && typeof node.value === "string") {
+      node.value = annotateManagedImagesInRawHtml(node.value);
+      return;
     }
 
     if (!Array.isArray(node.children)) return;
