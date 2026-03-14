@@ -3,7 +3,11 @@ import SEO from "../components/SEO.astro";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
 import SkipLink from "../components/SkipLink.astro";
-import { parseSeoFrontmatter, parseSolidaryFrontmatter } from "../solidary-config/site";
+import {
+  DEFAULT_SITE_FEATURES,
+  parseSeoFrontmatter,
+  parseSolidaryFrontmatter
+} from "../solidary-config/site";
 
 import "../styles/global.css";
 
@@ -15,6 +19,8 @@ const siteName = solidary.title;
 const siteDescription = solidary.description;
 const siteUrl = solidary.url;
 const htmlLang = seo.locale;
+const dynamicImageLoadingEnabled =
+  solidary.features?.dynamicImageLoading ?? DEFAULT_SITE_FEATURES.dynamicImageLoading;
 
 const {
   title: legacyTitle,
@@ -46,6 +52,90 @@ const canonical = (() => {
     return normalizedCanonicalPath;
   }
 })();
+const dynamicImageLoaderScript = `
+(() => {
+  const MANAGED_ATTR = "data-dynamic-image-managed";
+  const SMALL_ATTR = "data-dynamic-image-src-small";
+  const MEDIUM_ATTR = "data-dynamic-image-src-medium";
+  const LARGE_ATTR = "data-dynamic-image-src-large";
+  const ORIGINAL_ATTR = "data-dynamic-image-src-original";
+  const SMALL_MAX_PX = 560;
+  const MEDIUM_MAX_PX = 1080;
+  const LARGE_MAX_PX = 1600;
+
+  const parsePositiveNumber = (value) => {
+    if (!value) return null;
+    const parsed = Number.parseFloat(String(value).trim());
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return parsed;
+  };
+
+  const getDisplayWidth = (image) => {
+    const measuredWidth = image.getBoundingClientRect().width;
+    if (measuredWidth > 0) return measuredWidth;
+
+    const widthAttribute = parsePositiveNumber(image.getAttribute("width"));
+    if (widthAttribute) return widthAttribute;
+
+    const parentWidth = image.parentElement?.getBoundingClientRect().width ?? 0;
+    if (parentWidth > 0) return parentWidth;
+
+    return Math.min(window.innerWidth || 1200, 1200);
+  };
+
+  const resolveVariantSource = (image) => {
+    const small = (image.getAttribute(SMALL_ATTR) || "").trim();
+    const medium = (image.getAttribute(MEDIUM_ATTR) || "").trim();
+    const large = (image.getAttribute(LARGE_ATTR) || "").trim();
+    const original = (image.getAttribute(ORIGINAL_ATTR) || "").trim();
+
+    if (!small && !medium && !large && !original) return "";
+
+    const devicePixelRatio =
+      Number.isFinite(window.devicePixelRatio) && window.devicePixelRatio > 0
+        ? window.devicePixelRatio
+        : 1;
+    const targetPixels = getDisplayWidth(image) * devicePixelRatio;
+
+    if (targetPixels <= SMALL_MAX_PX) {
+      return small || medium || large || original;
+    }
+
+    if (targetPixels <= MEDIUM_MAX_PX) {
+      return medium || large || original || small;
+    }
+
+    if (targetPixels <= LARGE_MAX_PX) {
+      return large || original || medium || small;
+    }
+
+    return original || large || medium || small;
+  };
+
+  const syncManagedImage = (image) => {
+    const nextSource = resolveVariantSource(image);
+    if (!nextSource) return;
+    const currentSource = (image.getAttribute("src") || "").trim();
+    if (currentSource === nextSource) return;
+    image.setAttribute("src", nextSource);
+  };
+
+  let frameId = 0;
+  const scheduleSync = () => {
+    if (frameId) return;
+    frameId = window.requestAnimationFrame(() => {
+      frameId = 0;
+      document
+        .querySelectorAll('img[' + MANAGED_ATTR + '="true"]')
+        .forEach((image) => syncManagedImage(image));
+    });
+  };
+
+  scheduleSync();
+  window.addEventListener("load", scheduleSync);
+  window.addEventListener("resize", scheduleSync, { passive: true });
+})();
+`.trim();
 ---
 
 <!doctype html>
@@ -72,5 +162,6 @@ const canonical = (() => {
       <slot />
     </main>
     <Footer />
+    {dynamicImageLoadingEnabled && <script is:inline set:html={dynamicImageLoaderScript} />}
   </body>
 </html>
